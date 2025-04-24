@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { agent } from './agent.js';
 import dotenv from 'dotenv';
+import helmet from 'helmet'; // Import Helmet
 
 dotenv.config();
 
@@ -11,26 +12,29 @@ const port = process.env.AGENT_PORT || 3001;
 // Enable trust proxy if behind a reverse proxy like nginx or load balancer
 app.set('trust proxy', true);
 
+// Security: Add Helmet for security headers
+app.use(helmet());
+
 // CORS configuration with more control
+const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:8080'];
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      return callback(null, true); // Allow requests with no origin
+    }
 
-    // Define your allowed origins here.  Read from environment variables for production.
-    const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:8080']; // Example
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
+  optionsSuccessStatus: 200,
 };
 
 app.use(cors(corsOptions));
 app.use(express.json());
-
 
 app.get('/', (req, res) => {
   res.status(200).send('AI Agent Server is running');
@@ -56,22 +60,22 @@ app.post('/generate', async (req, res) => {
       { configurable: { thread_id } }
     );
 
-    if (!result || !result.messages || result.messages.length === 0) {
+    if (!result?.messages?.length) {
       console.warn('No messages returned from agent.invoke');
       return res.status(500).json({ error: 'No response from AI agent.' });
     }
 
     const lastMessage = result.messages.at(-1);
 
-    if (!lastMessage || !lastMessage.content) {
+    if (!lastMessage?.content) {
       console.warn('Last message has no content.');
       return res.status(500).json({ error: 'AI agent returned an empty response.' });
     }
 
-    res.status(200).json({ response: lastMessage.content }); // Explicitly name the returned content
+    res.status(200).json({ response: lastMessage.content });
   } catch (error) {
     console.error('Error in generate endpoint:', error);
-    res.status(500).json({ error: 'Failed to process request. See server logs for details.' }); // More informative error message
+    res.status(500).json({ error: 'Failed to process request. See server logs for details.' });
   }
 });
 
@@ -81,7 +85,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-
 const server = app.listen(port, () => {
   console.log(`Agent server is running on port ${port}`);
 });
@@ -89,6 +92,13 @@ const server = app.listen(port, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT signal received: closing HTTP server');
   server.close(() => {
     console.log('HTTP server closed');
   });

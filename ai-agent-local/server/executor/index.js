@@ -3,6 +3,7 @@ import cors from 'cors';
 import { VM } from 'vm2';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import { isDeepStrictEqual } from 'util'; // Import for safer object comparison
 
 dotenv.config();
 
@@ -26,6 +27,9 @@ app.get('/', (req, res) => {
   res.send('Code Executor Server is running');
 });
 
+const MAX_CODE_LENGTH = 5000; // Reduced max code length for security
+const VM_TIMEOUT = 3000; // Reduced timeout for faster response and resource management
+
 app.post('/execute', async (req, res) => {
   const { code } = req.body;
 
@@ -37,30 +41,31 @@ app.post('/execute', async (req, res) => {
     return res.status(400).json({ error: 'Code must be a string' });
   }
 
+  const trimmedCode = code.trim();
+  if (!trimmedCode) {
+    return res.status(400).json({ error: 'Empty code provided' });
+  }
+
+  if (trimmedCode.length > MAX_CODE_LENGTH) {
+    return res.status(400).json({ error: 'Code too long' });
+  }
+
   let result = '';
   let error = '';
 
   try {
-    // Validate code structure
-    const trimmedCode = code.trim();
-    if (!trimmedCode) {
-      return res.status(400).json({ error: 'Empty code provided' });
-    }
-
-    // Prevent infinite loops and resource exhaustion
-    if (trimmedCode.length > 10000) {
-      return res.status(400).json({ error: 'Code too long' });
-    }
-
-    // Create a sandbox with VM2 for secure code execution
     const vm = new VM({
-      timeout: 5000, // 5 seconds timeout
+      timeout: VM_TIMEOUT,
       sandbox: {
         console: {
           log: (...args) => {
             result += args.map(arg => {
               try {
-                return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+                if (typeof arg === 'object' && arg !== null) {
+                  return JSON.stringify(arg, null, 2); // Pretty print JSON
+                } else {
+                  return String(arg);
+                }
               } catch (e) {
                 return '[Unserializable Object]';
               }
@@ -69,21 +74,28 @@ app.post('/execute', async (req, res) => {
           error: (...args) => {
             error += args.map(arg => {
               try {
-                return typeof arg === 'object' ? JSON.stringify(arg) : String(arg);
+                if (typeof arg === 'object' && arg !== null) {
+                  return JSON.stringify(arg, null, 2); // Pretty print JSON
+                } else {
+                  return String(arg);
+                }
               } catch (e) {
                 return '[Unserializable Object]';
               }
             }).join(' ') + '\n';
           }
         },
-        // Remove fetch to prevent network access
-        // fetch: global.fetch,
+        // Prevent access to potentially dangerous globals
+        // process: undefined,
+        // require: undefined,
+        // global: undefined,
+        // root: undefined,
+        // constructor: undefined,
       },
       eval: false,
       wasm: false,
     });
 
-    // Wrap the code in a try-catch block to catch syntax errors
     const wrappedCode = `
       try {
         ${trimmedCode}
@@ -92,21 +104,24 @@ app.post('/execute', async (req, res) => {
       }
     `;
 
-    // Run the code in the sandbox
     let output;
     try {
       output = vm.run(wrappedCode);
+
+      if (output !== undefined && typeof output !== 'function') {
+        try {
+          if (typeof output === 'object' && output !== null) {
+            result += JSON.stringify(output, null, 2); // Pretty print JSON
+          } else {
+            result += String(output);
+          }
+        } catch (e) {
+          result += '[Unserializable Output]';
+        }
+      }
     } catch (vmError) {
       console.error('VM Error:', vmError);
       error += vmError.message || 'VM Execution Error';
-    }
-
-    if (output !== undefined && typeof output !== 'function') {
-      try {
-        result += String(output);
-      } catch (e) {
-        result += '[Unserializable Output]';
-      }
     }
 
     res.json({
@@ -115,7 +130,7 @@ app.post('/execute', async (req, res) => {
     });
   } catch (err) {
     console.error('Error executing code:', err);
-    res.status(500).json({ // Changed to 500 for server errors
+    res.status(500).json({
       result: result.trim(),
       error: (err.message || 'Error executing code').trim()
     });
