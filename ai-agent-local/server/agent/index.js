@@ -2,7 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { agent } from './agent.js';
 import dotenv from 'dotenv';
-import helmet from 'helmet'; // Import Helmet
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit'; // Import rateLimit
 
 dotenv.config();
 
@@ -15,18 +16,29 @@ app.set('trust proxy', true);
 // Security: Add Helmet for security headers
 app.use(helmet());
 
+// Security: Rate limiting to prevent abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again after 15 minutes',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+app.use(limiter);
+
 // CORS configuration with more control
-const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000', 'http://localhost:8080'];
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080').split(',');
 
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) {
-      return callback(null, true); // Allow requests with no origin
+      return callback(null, true); // Allow requests with no origin (e.g., mobile apps)
     }
 
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.warn(`CORS blocked request from origin: ${origin}`); // Log blocked origins
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -75,6 +87,7 @@ app.post('/generate', async (req, res) => {
     res.status(200).json({ response: lastMessage.content });
   } catch (error) {
     console.error('Error in generate endpoint:', error);
+    // Consider more specific error handling based on the type of error.
     res.status(500).json({ error: 'Failed to process request. See server logs for details.' });
   }
 });
@@ -92,14 +105,24 @@ const server = app.listen(port, () => {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
-  server.close(() => {
+  server.close((err) => { // Handle potential error during server close
+    if (err) {
+      console.error('Error closing server:', err);
+      process.exit(1); // Exit with error code
+    }
     console.log('HTTP server closed');
+    process.exit(0); // Exit gracefully
   });
 });
 
 process.on('SIGINT', () => {
   console.log('SIGINT signal received: closing HTTP server');
-  server.close(() => {
+  server.close((err) => { // Handle potential error during server close
+    if (err) {
+      console.error('Error closing server:', err);
+      process.exit(1); // Exit with error code
+    }
     console.log('HTTP server closed');
+    process.exit(0); // Exit gracefully
   });
 });

@@ -4,6 +4,7 @@ import { VM } from 'vm2';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { isDeepStrictEqual } from 'util'; // Import for safer object comparison
+import helmet from 'helmet'; // Import helmet for security headers
 
 dotenv.config();
 
@@ -21,14 +22,15 @@ const limiter = rateLimit({
 
 app.use(limiter);
 app.use(express.json({ limit: '100kb' })); // Limit request body size
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: '*' })); // Consider restricting origin in production
+app.use(helmet()); // Add security headers
 
 app.get('/', (req, res) => {
   res.send('Code Executor Server is running');
 });
 
-const MAX_CODE_LENGTH = 5000; // Reduced max code length for security
-const VM_TIMEOUT = 3000; // Reduced timeout for faster response and resource management
+const MAX_CODE_LENGTH = 2000; // Further reduced max code length for security
+const VM_TIMEOUT = 2000; // Further reduced timeout for faster response and resource management
 
 app.post('/execute', async (req, res) => {
   const { code } = req.body;
@@ -91,6 +93,8 @@ app.post('/execute', async (req, res) => {
         // global: undefined,
         // root: undefined,
         // constructor: undefined,
+        Buffer: undefined, // Remove Buffer
+        __proto__: undefined, // Remove prototype pollution risk
       },
       eval: false,
       wasm: false,
