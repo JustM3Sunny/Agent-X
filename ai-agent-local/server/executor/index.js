@@ -3,8 +3,8 @@ import cors from 'cors';
 import { VM } from 'vm2';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import { isDeepStrictEqual } from 'util'; // Import for safer object comparison
 import helmet from 'helmet'; // Import helmet for security headers
+import xss from 'xss'; // Import xss for input sanitization
 
 dotenv.config();
 
@@ -22,7 +22,7 @@ const limiter = rateLimit({
 
 app.use(limiter);
 app.use(express.json({ limit: '100kb' })); // Limit request body size
-app.use(cors({ origin: '*' })); // Consider restricting origin in production
+app.use(cors({ origin: '*' })); // Consider restricting origin in production.  Ideally, this should be a specific origin or a list of allowed origins.
 app.use(helmet()); // Add security headers
 
 app.get('/', (req, res) => {
@@ -33,7 +33,7 @@ const MAX_CODE_LENGTH = 2000; // Further reduced max code length for security
 const VM_TIMEOUT = 2000; // Further reduced timeout for faster response and resource management
 
 app.post('/execute', async (req, res) => {
-  const { code } = req.body;
+  let { code } = req.body;
 
   if (!code) {
     return res.status(400).json({ error: 'No code provided' });
@@ -42,6 +42,8 @@ app.post('/execute', async (req, res) => {
   if (typeof code !== 'string') {
     return res.status(400).json({ error: 'Code must be a string' });
   }
+
+  code = xss(code); // Sanitize the input code to prevent XSS attacks
 
   const trimmedCode = code.trim();
   if (!trimmedCode) {
@@ -95,6 +97,8 @@ app.post('/execute', async (req, res) => {
         // constructor: undefined,
         Buffer: undefined, // Remove Buffer
         __proto__: undefined, // Remove prototype pollution risk
+        // Add a safe Math object
+        Math: Math,
       },
       eval: false,
       wasm: false,

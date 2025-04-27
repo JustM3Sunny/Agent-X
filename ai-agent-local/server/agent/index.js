@@ -3,7 +3,8 @@ import cors from 'cors';
 import { agent } from './agent.js';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit'; // Import rateLimit
+import rateLimit from 'express-rate-limit';
+import morgan from 'morgan'; // Import morgan for logging
 
 dotenv.config();
 
@@ -24,7 +25,9 @@ const limiter = rateLimit({
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
-app.use(limiter);
+
+// Apply rate limiting only to the /generate endpoint
+app.use('/generate', limiter);
 
 // CORS configuration with more control
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080').split(',');
@@ -39,7 +42,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.warn(`CORS blocked request from origin: ${origin}`); // Log blocked origins
-      callback(new Error('Not allowed by CORS'));
+      return callback(new Error('Not allowed by CORS')); // Ensure callback is always called
     }
   },
   optionsSuccessStatus: 200,
@@ -47,6 +50,9 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Logging middleware using Morgan
+app.use(morgan('combined')); // 'combined' provides standard Apache log output
 
 app.get('/', (req, res) => {
   res.status(200).send('AI Agent Server is running');
@@ -103,26 +109,17 @@ const server = app.listen(port, () => {
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  server.close((err) => { // Handle potential error during server close
+const shutdown = () => {
+  console.log('Shutting down server...');
+  server.close((err) => {
     if (err) {
       console.error('Error closing server:', err);
-      process.exit(1); // Exit with error code
+      process.exit(1);
     }
-    console.log('HTTP server closed');
-    process.exit(0); // Exit gracefully
+    console.log('Server closed');
+    process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  console.log('SIGINT signal received: closing HTTP server');
-  server.close((err) => { // Handle potential error during server close
-    if (err) {
-      console.error('Error closing server:', err);
-      process.exit(1); // Exit with error code
-    }
-    console.log('HTTP server closed');
-    process.exit(0); // Exit gracefully
-  });
-});
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
