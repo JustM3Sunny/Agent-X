@@ -4,7 +4,8 @@ import { agent } from './agent.js';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import morgan from 'morgan'; // Import morgan for logging
+import morgan from 'morgan';
+import { isArray } from 'lodash-es'; // Import lodash's isArray for better type checking
 
 dotenv.config();
 
@@ -30,7 +31,9 @@ const limiter = rateLimit({
 app.use('/generate', limiter);
 
 // CORS configuration with more control
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080').split(',');
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080')
+  .split(',')
+  .map((origin) => origin.trim()); // Trim whitespace
 
 const corsOptions = {
   origin: (origin, callback) => {
@@ -41,8 +44,9 @@ const corsOptions = {
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      console.warn(`CORS blocked request from origin: ${origin}`); // Log blocked origins
-      return callback(new Error('Not allowed by CORS')); // Ensure callback is always called
+      const errorMessage = `CORS blocked request from origin: ${origin}`;
+      console.warn(errorMessage); // Log blocked origins
+      return callback(new Error(errorMessage)); // Ensure callback is always called
     }
   },
   optionsSuccessStatus: 200,
@@ -79,14 +83,16 @@ app.post('/generate', async (req, res) => {
     );
 
     if (!result?.messages?.length) {
-      console.warn('No messages returned from agent.invoke');
+      const errorMessage = 'No messages returned from agent.invoke';
+      console.warn(errorMessage);
       return res.status(500).json({ error: 'No response from AI agent.' });
     }
 
     const lastMessage = result.messages.at(-1);
 
     if (!lastMessage?.content) {
-      console.warn('Last message has no content.');
+      const errorMessage = 'Last message has no content.';
+      console.warn(errorMessage);
       return res.status(500).json({ error: 'AI agent returned an empty response.' });
     }
 
@@ -94,14 +100,27 @@ app.post('/generate', async (req, res) => {
   } catch (error) {
     console.error('Error in generate endpoint:', error);
     // Consider more specific error handling based on the type of error.
-    res.status(500).json({ error: 'Failed to process request. See server logs for details.' });
+    let errorMessage = 'Failed to process request. See server logs for details.';
+    let statusCode = 500;
+
+    if (error instanceof Error) {
+      errorMessage = error.message; // Include the error message in the response
+    }
+
+    // Example of more specific error handling (adjust based on your agent's error types)
+    if (error.name === 'TimeoutError') {
+      statusCode = 504; // Gateway Timeout
+      errorMessage = 'AI agent timed out. Please try again later.';
+    }
+
+    res.status(statusCode).json({ error: errorMessage });
   }
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  res.status(500).json({ error: err.message || 'Something went wrong!' }); // Include error message
 });
 
 const server = app.listen(port, () => {
@@ -123,3 +142,13 @@ const shutdown = () => {
 
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Optionally, trigger shutdown or other recovery mechanisms here
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  // Optionally, trigger shutdown or other recovery mechanisms here
+  process.exit(1); // Exit after logging the error
+});

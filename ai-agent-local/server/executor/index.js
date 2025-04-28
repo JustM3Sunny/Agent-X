@@ -3,8 +3,8 @@ import cors from 'cors';
 import { VM } from 'vm2';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
-import helmet from 'helmet'; // Import helmet for security headers
-import xss from 'xss'; // Import xss for input sanitization
+import helmet from 'helmet';
+import xss from 'xss';
 
 dotenv.config();
 
@@ -16,21 +16,21 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again after 15 minutes',
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use(limiter);
-app.use(express.json({ limit: '100kb' })); // Limit request body size
-app.use(cors({ origin: '*' })); // Consider restricting origin in production.  Ideally, this should be a specific origin or a list of allowed origins.
-app.use(helmet()); // Add security headers
+app.use(express.json({ limit: '100kb' }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' })); // Use environment variable for CORS origin
+app.use(helmet());
 
 app.get('/', (req, res) => {
   res.send('Code Executor Server is running');
 });
 
-const MAX_CODE_LENGTH = 2000; // Further reduced max code length for security
-const VM_TIMEOUT = 2000; // Further reduced timeout for faster response and resource management
+const MAX_CODE_LENGTH = 2000;
+const VM_TIMEOUT = 2000;
 
 app.post('/execute', async (req, res) => {
   let { code } = req.body;
@@ -43,7 +43,7 @@ app.post('/execute', async (req, res) => {
     return res.status(400).json({ error: 'Code must be a string' });
   }
 
-  code = xss(code); // Sanitize the input code to prevent XSS attacks
+  code = xss(code); // Sanitize the input code
 
   const trimmedCode = code.trim();
   if (!trimmedCode) {
@@ -90,15 +90,13 @@ app.post('/execute', async (req, res) => {
           }
         },
         // Prevent access to potentially dangerous globals
-        // process: undefined,
-        // require: undefined,
-        // global: undefined,
-        // root: undefined,
-        // constructor: undefined,
-        Buffer: undefined, // Remove Buffer
-        __proto__: undefined, // Remove prototype pollution risk
-        // Add a safe Math object
+        Buffer: undefined,
+        __proto__: undefined,
         Math: Math,
+        Date: undefined, // Remove Date object
+        Function: undefined, // Remove Function constructor
+        eval: undefined, // Remove eval function
+        require: undefined // Remove require function
       },
       eval: false,
       wasm: false,
