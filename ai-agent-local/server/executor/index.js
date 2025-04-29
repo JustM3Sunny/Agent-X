@@ -4,7 +4,7 @@ import { VM } from 'vm2';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import xss from 'xss';
+import { xss } from 'xss';
 
 dotenv.config();
 
@@ -32,114 +32,120 @@ app.get('/', (req, res) => {
 const MAX_CODE_LENGTH = 2000;
 const VM_TIMEOUT = 2000;
 
+// Centralized error handling function
+const handleExecutionError = (res, statusCode, message, result = '', error = '') => {
+  console.error(message, error);
+  res.status(statusCode).json({ result: result.trim(), error: error.trim() });
+};
+
 app.post('/execute', async (req, res) => {
-  let { code } = req.body;
-
-  if (!code) {
-    return res.status(400).json({ error: 'No code provided' });
-  }
-
-  if (typeof code !== 'string') {
-    return res.status(400).json({ error: 'Code must be a string' });
-  }
-
-  code = xss(code); // Sanitize the input code
-
-  const trimmedCode = code.trim();
-  if (!trimmedCode) {
-    return res.status(400).json({ error: 'Empty code provided' });
-  }
-
-  if (trimmedCode.length > MAX_CODE_LENGTH) {
-    return res.status(400).json({ error: 'Code too long' });
-  }
-
-  let result = '';
-  let error = '';
-
   try {
-    const vm = new VM({
-      timeout: VM_TIMEOUT,
-      sandbox: {
-        console: {
-          log: (...args) => {
-            result += args.map(arg => {
-              try {
-                if (typeof arg === 'object' && arg !== null) {
-                  return JSON.stringify(arg, null, 2); // Pretty print JSON
-                } else {
-                  return String(arg);
-                }
-              } catch (e) {
-                return '[Unserializable Object]';
-              }
-            }).join(' ') + '\n';
-          },
-          error: (...args) => {
-            error += args.map(arg => {
-              try {
-                if (typeof arg === 'object' && arg !== null) {
-                  return JSON.stringify(arg, null, 2); // Pretty print JSON
-                } else {
-                  return String(arg);
-                }
-              } catch (e) {
-                return '[Unserializable Object]';
-              }
-            }).join(' ') + '\n';
-          }
-        },
-        // Prevent access to potentially dangerous globals
-        Buffer: undefined,
-        __proto__: undefined,
-        Math: Math,
-        Date: undefined, // Remove Date object
-        Function: undefined, // Remove Function constructor
-        eval: undefined, // Remove eval function
-        require: undefined // Remove require function
-      },
-      eval: false,
-      wasm: false,
-    });
+    let { code } = req.body;
 
-    const wrappedCode = `
-      try {
-        ${trimmedCode}
-      } catch (err) {
-        console.error(err.message);
-      }
-    `;
-
-    let output;
-    try {
-      output = vm.run(wrappedCode);
-
-      if (output !== undefined && typeof output !== 'function') {
-        try {
-          if (typeof output === 'object' && output !== null) {
-            result += JSON.stringify(output, null, 2); // Pretty print JSON
-          } else {
-            result += String(output);
-          }
-        } catch (e) {
-          result += '[Unserializable Output]';
-        }
-      }
-    } catch (vmError) {
-      console.error('VM Error:', vmError);
-      error += vmError.message || 'VM Execution Error';
+    if (!code) {
+      return handleExecutionError(res, 400, 'No code provided', '', 'No code provided');
     }
 
-    res.json({
-      result: result.trim(),
-      error: error.trim()
-    });
+    if (typeof code !== 'string') {
+      return handleExecutionError(res, 400, 'Code must be a string', '', 'Code must be a string');
+    }
+
+    code = xss(code); // Sanitize the input code
+
+    const trimmedCode = code.trim();
+    if (!trimmedCode) {
+      return handleExecutionError(res, 400, 'Empty code provided', '', 'Empty code provided');
+    }
+
+    if (trimmedCode.length > MAX_CODE_LENGTH) {
+      return handleExecutionError(res, 400, 'Code too long', '', 'Code too long');
+    }
+
+    let result = '';
+    let error = '';
+
+    try {
+      const vm = new VM({
+        timeout: VM_TIMEOUT,
+        sandbox: {
+          console: {
+            log: (...args) => {
+              result += args.map(arg => {
+                try {
+                  if (typeof arg === 'object' && arg !== null) {
+                    return JSON.stringify(arg, null, 2); // Pretty print JSON
+                  } else {
+                    return String(arg);
+                  }
+                } catch (e) {
+                  return '[Unserializable Object]';
+                }
+              }).join(' ') + '\n';
+            },
+            error: (...args) => {
+              error += args.map(arg => {
+                try {
+                  if (typeof arg === 'object' && arg !== null) {
+                    return JSON.stringify(arg, null, 2); // Pretty print JSON
+                  } else {
+                    return String(arg);
+                  }
+                } catch (e) {
+                  return '[Unserializable Object]';
+                }
+              }).join(' ') + '\n';
+            }
+          },
+          // Prevent access to potentially dangerous globals
+          Buffer: undefined,
+          __proto__: null, // More secure than undefined
+          Math: Math,
+          Date: undefined, // Remove Date object
+          Function: undefined, // Remove Function constructor
+          eval: undefined, // Remove eval function
+          require: undefined // Remove require function
+        },
+        eval: false,
+        wasm: false,
+      });
+
+      const wrappedCode = `
+        try {
+          ${trimmedCode}
+        } catch (err) {
+          console.error(err.message);
+        }
+      `;
+
+      let output;
+      try {
+        output = vm.run(wrappedCode);
+
+        if (output !== undefined && typeof output !== 'function') {
+          try {
+            if (typeof output === 'object' && output !== null) {
+              result += JSON.stringify(output, null, 2); // Pretty print JSON
+            } else {
+              result += String(output);
+            }
+          } catch (e) {
+            result += '[Unserializable Output]';
+          }
+        }
+      } catch (vmError) {
+        console.error('VM Error:', vmError);
+        error += vmError.message || 'VM Execution Error';
+      }
+
+      res.json({
+        result: result.trim(),
+        error: error.trim()
+      });
+    } catch (vmSetupError) {
+      return handleExecutionError(res, 500, 'VM Setup Error:', vmSetupError.message);
+    }
   } catch (err) {
-    console.error('Error executing code:', err);
-    res.status(500).json({
-      result: result.trim(),
-      error: (err.message || 'Error executing code').trim()
-    });
+    return handleExecutionError(res, 500, 'Error executing code:', err.message);
   }
 });
 

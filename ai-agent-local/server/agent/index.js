@@ -45,7 +45,7 @@ const corsOptions = {
       callback(null, true);
     } else {
       const errorMessage = `CORS blocked request from origin: ${origin}`;
-      console.warn(errorMessage); // Log blocked origins
+      console.warn(errorMessage);
       return callback(new Error(errorMessage)); // Ensure callback is always called
     }
   },
