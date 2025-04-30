@@ -103,7 +103,8 @@ app.post('/execute', async (req, res) => {
           Date: undefined, // Remove Date object
           Function: undefined, // Remove Function constructor
           eval: undefined, // Remove eval function
-          require: undefined // Remove require function
+          require: undefined, // Remove require function
+          process: undefined // Remove process object
         },
         eval: false,
         wasm: false,
