@@ -86,7 +86,7 @@ app.post('/generate', async (req, res) => {
 
     if (!result?.messages?.length) {
       const errorMessage = 'No messages returned from agent.invoke';
-      console.warn(errorMessage);
+      logError(errorMessage); // Use centralized logging
       return res.status(500).json({ error: 'No response from AI agent.' });
     }
 
@@ -94,13 +94,13 @@ app.post('/generate', async (req, res) => {
 
     if (!lastMessage?.content) {
       const errorMessage = 'Last message has no content.';
-      console.warn(errorMessage);
+      logError(errorMessage); // Use centralized logging
       return res.status(500).json({ error: 'AI agent returned an empty response.' });
     }
 
     res.status(200).json({ response: lastMessage.content });
   } catch (error) {
-    console.error('Error in generate endpoint:', error);
+    logError('Error in generate endpoint:', error); // Use centralized logging
     let errorMessage = 'Failed to process request. See server logs for details.';
     let statusCode = 500;
 
@@ -122,7 +122,7 @@ app.post('/generate', async (req, res) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Global error handler:', err.stack);
+  logError('Global error handler:', err); // Use centralized logging, log the full error object
   res.status(500).json({ error: 'Something went wrong!' }); // Removed err.message for security
 });
 

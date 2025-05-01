@@ -33,9 +33,9 @@ const MAX_CODE_LENGTH = 2000;
 const VM_TIMEOUT = 2000;
 
 // Centralized error handling function
-const handleExecutionError = (res, statusCode, message, result = '', error = '') => {
+const handleExecutionError = (res, statusCode, message, error = '') => {
   console.error(message, error);
-  res.status(statusCode).json({ result: result.trim(), error: error.trim() });
+  res.status(statusCode).json({ error: message, details: error }); // More informative error response
 };
 
 app.post('/execute', async (req, res) => {
@@ -43,22 +43,22 @@ app.post('/execute', async (req, res) => {
     let { code } = req.body;
 
     if (!code) {
-      return handleExecutionError(res, 400, 'No code provided', '', 'No code provided');
+      return handleExecutionError(res, 400, 'No code provided');
     }
 
     if (typeof code !== 'string') {
-      return handleExecutionError(res, 400, 'Code must be a string', '', 'Code must be a string');
+      return handleExecutionError(res, 400, 'Code must be a string');
     }
 
     code = xss(code); // Sanitize the input code
 
     const trimmedCode = code.trim();
     if (!trimmedCode) {
-      return handleExecutionError(res, 400, 'Empty code provided', '', 'Empty code provided');
+      return handleExecutionError(res, 400, 'Empty code provided');
     }
 
     if (trimmedCode.length > MAX_CODE_LENGTH) {
-      return handleExecutionError(res, 400, 'Code too long', '', 'Code too long');
+      return handleExecutionError(res, 400, 'Code too long');
     }
 
     let result = '';
@@ -104,7 +104,12 @@ app.post('/execute', async (req, res) => {
           Function: undefined, // Remove Function constructor
           eval: undefined, // Remove eval function
           require: undefined, // Remove require function
-          process: undefined // Remove process object
+          process: undefined,
+          // Add a safe timer
+          setTimeout: undefined,
+          setInterval: undefined,
+          clearTimeout: undefined,
+          clearInterval: undefined
         },
         eval: false,
         wasm: false,
@@ -115,6 +120,7 @@ app.post('/execute', async (req, res) => {
           ${trimmedCode}
         } catch (err) {
           console.error(err.message);
+          error = err.message; // Capture error message for response
         }
       `;
 
