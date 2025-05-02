@@ -44,7 +44,7 @@ const corsOptions = {
     }
 
     if (allowedOrigins.includes(origin)) {
-      callback(null, true);
+      return callback(null, true);
     } else {
       const errorMessage = `CORS blocked request from origin: ${origin}`;
       console.warn(errorMessage);
@@ -100,7 +100,6 @@ app.post('/generate', async (req, res) => {
 
     res.status(200).json({ response: lastMessage.content });
   } catch (error) {
-    logError('Error in generate endpoint:', error); // Use centralized logging
     let errorMessage = 'Failed to process request. See server logs for details.';
     let statusCode = 500;
 
@@ -116,6 +115,7 @@ app.post('/generate', async (req, res) => {
       errorMessage = `Validation error: ${error.message}`;
     }
 
+    logError(`Error in generate endpoint: ${errorMessage}`, error); // Log specific error message
     res.status(statusCode).json({ error: errorMessage });
   }
 });
@@ -132,21 +132,44 @@ function logError(message, error) {
     // Optionally, send logs to a centralized logging service (e.g., Sentry, Datadog)
 }
 
-const server = app.listen(port, () => {
-  console.log(`Agent server is running on port ${port}`);
-});
+let server;
+
+async function startServer() {
+  try {
+    server = app.listen(port, () => {
+      console.log(`Agent server is running on port ${port}`);
+    });
+  } catch (error) {
+    logError('Failed to start server:', error);
+    process.exit(1); // Exit if the server fails to start
+  }
+}
+
+startServer();
 
 // Graceful shutdown
-const shutdown = () => {
+const shutdown = async () => {
   console.log('Shutting down server...');
-  server.close((err) => {
-    if (err) {
-      logError('Error closing server:', err);
-      process.exit(1);
+  try {
+    if (server) {
+      await new Promise((resolve, reject) => {
+        server.close((err) => {
+          if (err) {
+            logError('Error closing server:', err);
+            reject(err);
+            return;
+          }
+          console.log('Server closed');
+          resolve();
+        });
+      });
     }
-    console.log('Server closed');
+    console.log('Server shutdown complete.');
     process.exit(0);
-  });
+  } catch (error) {
+    logError('Error during shutdown:', error);
+    process.exit(1);
+  }
 };
 
 process.on('SIGTERM', shutdown);

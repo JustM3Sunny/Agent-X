@@ -109,7 +109,9 @@ app.post('/execute', async (req, res) => {
           setTimeout: undefined,
           setInterval: undefined,
           clearTimeout: undefined,
-          clearInterval: undefined
+          clearInterval: undefined,
+          // Add a safe way to get current time
+          currentTime: () => Date.now()
         },
         eval: false,
         wasm: false,
