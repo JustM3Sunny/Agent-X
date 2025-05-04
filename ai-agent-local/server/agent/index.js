@@ -124,6 +124,7 @@ app.post('/generate', async (req, res) => {
 app.use((err, req, res, next) => {
   logError('Global error handler:', err); // Use centralized logging, log the full error object
   res.status(500).json({ error: 'Something went wrong!' }); // Removed err.message for security
+  next(); // Ensure next() is called to propagate the error (if needed)
 });
 
 // Centralized logging function

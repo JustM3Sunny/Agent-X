@@ -38,6 +38,20 @@ const handleExecutionError = (res, statusCode, message, error = '') => {
   res.status(statusCode).json({ error: message, details: error }); // More informative error response
 };
 
+// Custom serializer to handle circular references and unserializable objects
+const customSerializer = () => {
+  const seen = new WeakSet();
+  return (key, value) => {
+    if (typeof value === "object" && value !== null) {
+      if (seen.has(value)) {
+        return "[Circular Reference]";
+      }
+      seen.add(value);
+    }
+    return value;
+  };
+};
+
 app.post('/execute', async (req, res) => {
   try {
     let { code } = req.body;
@@ -73,7 +87,7 @@ app.post('/execute', async (req, res) => {
               result += args.map(arg => {
                 try {
                   if (typeof arg === 'object' && arg !== null) {
-                    return JSON.stringify(arg, null, 2); // Pretty print JSON
+                    return JSON.stringify(arg, customSerializer(), 2); // Pretty print JSON with custom serializer
                   } else {
                     return String(arg);
                   }
@@ -86,7 +100,7 @@ app.post('/execute', async (req, res) => {
               error += args.map(arg => {
                 try {
                   if (typeof arg === 'object' && arg !== null) {
-                    return JSON.stringify(arg, null, 2); // Pretty print JSON
+                    return JSON.stringify(arg, customSerializer(), 2); // Pretty print JSON with custom serializer
                   } else {
                     return String(arg);
                   }
@@ -133,7 +147,7 @@ app.post('/execute', async (req, res) => {
         if (output !== undefined && typeof output !== 'function') {
           try {
             if (typeof output === 'object' && output !== null) {
-              result += JSON.stringify(output, null, 2); // Pretty print JSON
+              result += JSON.stringify(output, customSerializer(), 2); // Pretty print JSON with custom serializer
             } else {
               result += String(output);
             }
