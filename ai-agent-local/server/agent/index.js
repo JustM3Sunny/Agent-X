@@ -5,14 +5,14 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
-import { isArray } from 'lodash-es'; // Import lodash's isArray for better type checking
+import { isArray } from 'lodash-es';
 
 dotenv.config();
 
 const app = express();
-const port = parseInt(process.env.AGENT_PORT || '3001', 10); // Ensure port is a number
+const port = parseInt(process.env.AGENT_PORT || '3001', 10);
 
-// Enable trust proxy if behind a reverse proxy like nginx or load balancer
+// Enable trust proxy if behind a reverse proxy
 app.set('trust proxy', true);
 
 // Security: Add Helmet for security headers
@@ -23,22 +23,20 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again after 15 minutes',
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
-// Apply rate limiting only to the /generate endpoint
 app.use('/generate', limiter);
 
-// CORS configuration with more control
+// CORS configuration
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080')
   .split(',')
-  .map((origin) => origin.trim()); // Trim whitespace
+  .map((origin) => origin.trim());
 
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) {
-      // Allow requests with no origin (e.g., mobile apps or curl requests) but log it.
       console.log('Request with no origin allowed.');
       return callback(null, true);
     }
@@ -48,7 +46,7 @@ const corsOptions = {
     } else {
       const errorMessage = `CORS blocked request from origin: ${origin}`;
       console.warn(errorMessage);
-      return callback(new Error(errorMessage)); // Ensure callback is always called
+      return callback(new Error(errorMessage));
     }
   },
   optionsSuccessStatus: 200,
@@ -57,8 +55,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Logging middleware using Morgan
-app.use(morgan('combined')); // 'combined' provides standard Apache log output
+// Logging middleware
+app.use(morgan('combined'));
 
 app.get('/', (req, res) => {
   res.status(200).send('AI Agent Server is running');
@@ -86,7 +84,7 @@ app.post('/generate', async (req, res) => {
 
     if (!result?.messages?.length) {
       const errorMessage = 'No messages returned from agent.invoke';
-      logError(errorMessage); // Use centralized logging
+      logError(errorMessage);
       return res.status(500).json({ error: 'No response from AI agent.' });
     }
 
@@ -94,7 +92,7 @@ app.post('/generate', async (req, res) => {
 
     if (!lastMessage?.content) {
       const errorMessage = 'Last message has no content.';
-      logError(errorMessage); // Use centralized logging
+      logError(errorMessage);
       return res.status(500).json({ error: 'AI agent returned an empty response.' });
     }
 
@@ -115,22 +113,22 @@ app.post('/generate', async (req, res) => {
       errorMessage = `Validation error: ${error.message}`;
     }
 
-    logError(`Error in generate endpoint: ${errorMessage}`, error); // Log specific error message
+    logError(`Error in generate endpoint: ${errorMessage}`, error);
     res.status(statusCode).json({ error: errorMessage });
   }
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  logError('Global error handler:', err); // Use centralized logging, log the full error object
-  res.status(500).json({ error: 'Something went wrong!' }); // Removed err.message for security
-  next(); // Ensure next() is called to propagate the error (if needed)
+  logError('Global error handler:', err);
+  res.status(500).json({ error: 'Something went wrong!' });
+  next();
 });
 
 // Centralized logging function
 function logError(message, error) {
-    console.error(message, error);
-    // Optionally, send logs to a centralized logging service (e.g., Sentry, Datadog)
+  console.error(message, error);
+  // Optionally, send logs to a centralized logging service (e.g., Sentry, Datadog)
 }
 
 let server;
@@ -142,7 +140,7 @@ async function startServer() {
     });
   } catch (error) {
     logError('Failed to start server:', error);
-    process.exit(1); // Exit if the server fails to start
+    process.exit(1);
   }
 }
 
@@ -182,5 +180,5 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (err) => {
   logError('Uncaught Exception:', err);
-  process.exit(1); // Exit after logging the error
+  process.exit(1);
 });
